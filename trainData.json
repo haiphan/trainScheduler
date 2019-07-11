@@ -1,0 +1,33 @@
+{
+    "stations": [
+        {
+            "number": 0,
+            "name": "alpha",
+            "distance": 500
+        },
+        {
+            "number": 1,
+            "name": "beta",
+            "distance": 600
+        }
+    ],
+    "trains": [
+        {
+            "number": 0,
+            "beginStation": 0,
+            "speed": 50
+        },
+        {
+            "number": 1,
+            "beginStation": 0,
+            "speed": 55
+        },
+        {
+            "number": 2,
+            "beginStation": 1,
+            "speed": 75
+        }
+    ],
+    "LOADINGTIME": 3,
+    "UNLOADINGTIME": 2
+}
