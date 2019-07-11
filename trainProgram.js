@@ -1,12 +1,11 @@
 const trainData = require('./trainData');
 
 const STATION_NUM = trainData.stations.length;
-const TRAIN_NUM = trainData.trains.length;
 const {LOADINGTIME, UNLOADINGTIME, stations} = trainData;
 const RUNTIME_MAX = 600;
 const POLL_INTERVAL = 1000;// in ms
 const MQ = {messages: [], trackInUse: {}};
-const DELAYMS = 200;
+
 const trainStatus = {
   LOADING: 'LOADING',
   UNLOADING: 'UNLOADING',
@@ -27,13 +26,13 @@ const calcDist = (begin, speed) => {
 
 const grantedForTrack = (mq, track) => {
   return Boolean(
-    mq.messages.find(m => m.type === 'grantTrack' && m.track === track)
+    mq.messages.find(m => m.type === MTYPE.GRA && m.track === track)
   );
 };
 
 const isGranted = (mq, train, track) => {
   return Boolean(
-    mq.messages.find(m => m.type === 'grantTrack'
+    mq.messages.find(m => m.type === MTYPE.GRA
       && m.track === track && m.train === train)
   );
 };
@@ -46,7 +45,7 @@ const controllerHandle = (mq) => {
       if (req && !grantedForTrack(mq, i)) {
         const {train, track} = req;
         console.log(`Grant permission for train ${train} track ${track}`);
-        mq.messages.push({type: 'grantTrack', track: track, train});
+        mq.messages.push({type: MTYPE.GRA, track, train});
       }
     }
   }
@@ -72,10 +71,10 @@ const trainProcess = (data, mq) => {
   endTime.setSeconds(startTime.getSeconds() + RUNTIME_MAX);
   let curStation = beginStation;
   let status = trainStatus.LOADING;
-  let startLoadTime = new Date();
-  let endLoadTime = new Date(startLoadTime);
-  endLoadTime.setSeconds(startLoadTime.getSeconds() + LOADINGTIME);
-  let beginMoveTime, trackDist, beginUnloadTime, endUnloadTime, startWaitTime;
+  let beginLoadTime = new Date();
+  let endLoadTime = new Date(beginLoadTime);
+  endLoadTime.setSeconds(beginLoadTime.getSeconds() + LOADINGTIME);
+  let beginMoveTime, trackDist, beginUnloadTime, endUnloadTime, beginWaitTime;
   const interval = setInterval(() => {
     const now = new Date();
     if (now > endTime) {
@@ -86,52 +85,48 @@ const trainProcess = (data, mq) => {
         return console.log(`train ${number} loading at station ${curStation}`);
       }
       status = trainStatus.WAITING;
-      startWaitTime = new Date();
-      mq.messages.push({type: 'requestTrack', track: Number(curStation), train: Number(number)});
-      console.log(mq.messages);
+      beginWaitTime = new Date();
+      mq.messages.push({type: MTYPE.REQ, track: curStation, train: number});
       return console.log(`train ${number} start waiting at station ${curStation}`);
     }
     if (status === trainStatus.WAITING) {
-      if (isGranted(mq, number, Number(curStation))) {
+      if (isGranted(mq, number, curStation)) {
         status = trainStatus.ONTRACK;
         mq.trackInUse[curStation] = true;
-        setTimeout(() => {
-          mq.messages = mq.messages.filter(m => !(m.type === 'grantTrack'
-            && Number(m.track) === Number(curStation) && m.train === number));
-          mq.messages = mq.messages.filter(m => !(m.type === 'requestTrack'
-            && Number(m.track) === Number(curStation) && m.train === number));
-        }, DELAYMS);
+        mq.messages = mq.messages.filter(({track, train}) => {
+          return !(track === curStation && train === number);
+        });
         beginMoveTime = new Date();
-        trackDist = stations.find(s => s.number === Number(curStation)).distance;
-        return console.log(`train ${number} on track after station ${curStation}`);
+        trackDist = stations.find(s => s.number === curStation).distance;
+        return console.log(`train ${number} start moving on track after station ${curStation}`);
       }
-      const waitSec = (now - startWaitTime) / 1000;
+      const waitSec = (now - beginWaitTime) / 1000;
       return console.log(`train ${number} waiting ${waitSec} seconds at station ${curStation}`);
     }
     if (status === trainStatus.ONTRACK) {
       const travelM = calcDist(beginMoveTime, speed);
       if (travelM < trackDist) {
-        return console.log(`train ${number} travels ${travelM} after station ${curStation}`);
+        return console.log(`train ${number} travels ${travelM}m after station ${curStation}`);
       }
-      const arriveStation = (Number(curStation) + 1) % STATION_NUM;
+      const arriveStation = (curStation + 1) % STATION_NUM;
       console.log(`train ${number} arrived at ${arriveStation}`);
       status = trainStatus.UNLOADING;
       mq.trackInUse[curStation] = false;
       beginUnloadTime = new Date();
       endUnloadTime = new Date(beginUnloadTime);
       endUnloadTime.setSeconds(beginUnloadTime.getSeconds() + UNLOADINGTIME);
-      curStation = String(arriveStation);
-      return console.log(`train ${number} unload at ${arriveStation}`);
+      curStation = arriveStation;
+      return console.log(`train ${number} start unload at station ${arriveStation}`);
     }
     if (status === trainStatus.UNLOADING) {
       if (now < endUnloadTime) {
-        return console.log(`train ${number} unload at ${curStation}`);
+        return console.log(`train ${number} unloading at ${curStation}`);
       }
       status = trainStatus.LOADING;
-      startLoadTime = new Date();
-      endLoadTime = new Date(startLoadTime);
-      endLoadTime.setSeconds(startLoadTime.getSeconds() + LOADINGTIME);
-      return console.log(`train ${number} load at ${curStation}`);
+      beginLoadTime = new Date();
+      endLoadTime = new Date(beginLoadTime);
+      endLoadTime.setSeconds(beginLoadTime.getSeconds() + LOADINGTIME);
+      return console.log(`train ${number} start load at ${curStation}`);
     }
   }, POLL_INTERVAL)
 };
